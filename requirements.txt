@@ -1,0 +1,26 @@
+# FastAPI
+fastapi
+uvicorn[standard]
+python-multipart
+
+# LangChain
+langchain
+langchain-community
+langchain-anthropic
+langgraph
+sentence-transformers
+langchain-text-splitters
+
+# Vector Store
+chromadb
+
+# Document Processing
+pypdf2
+
+# Google Sheets (optional)
+gspread
+oauth2client
+
+# Utilities
+python-dotenv
+pydantic-settings
