@@ -211,3 +211,241 @@ async def view_collection(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/projects/seed")
+async def seed_sample_projects(
+    settings: Settings = Depends(get_settings)
+):
+    """
+    Seed the database with sample Daruka projects.
+    Run this once to populate the projects collection.
+    """
+    from src.rag.project_matcher import ProjectMatcher
+    
+    try:
+        embeddings = EmbeddingsManager(model=settings.embedding_model)
+        chroma = ChromaManager(
+            persist_directory=settings.chroma_db_path,
+            embeddings_manager=embeddings
+        )
+        
+        # Sample projects
+        projects = [
+            {
+                "project_name": "Sundarbans Biodiversity Credit Project",
+                "focus_areas": "mangroves, biodiversity credits, carbon, community conservation",
+                "target_species": "birds, fish, crustaceans, mangrove species",
+                "location": "Indian Sundarbans, West Bengal",
+                "status": "active",
+                "methodology": "AI-powered bioacoustic monitoring, satellite imagery analysis, community data stewards",
+                "expected_outcomes": "300+ local data stewards, 1000+ hours bioacoustic data, measurable biodiversity credits",
+                "content": """India's First Biodiversity Credit Project in the Sundarbans.
+                
+This flagship project in the Indian Sundarbans—one of the world's largest mangrove forests and a RAMSAR-recognized site—demonstrates Daruka.Earth's complete dMRV capabilities.
+
+Key Achievements:
+- Empowered 300+ local individuals (including forest dwellers and women) as data stewards
+- Created green jobs through community-driven monitoring
+- Processed 1000+ hours of bioacoustic data for species identification
+- Piloted 500-hectare conservation zone
+- Democratized climate finance by ensuring rural communities benefit directly
+
+Technology: AudioMoth recorders, AI species identification, satellite imagery, mobile apps for community data collection."""
+            },
+            {
+                "project_name": "BioGuardian: Real-Time Biodiversity Threat Detection Platform",
+                "focus_areas": "AI, threat detection, climate resilience, ecosystem monitoring, multimodal",
+                "target_species": "multi-species, amphibians, birds, mammals",
+                "location": "Jharkhand, Sundarbans, India (scalable)",
+                "status": "development",
+                "methodology": "Multimodal AI using foundational models, bioacoustics, satellite, drone data fusion",
+                "expected_outcomes": "Real-time threat alerts, ecosystem insights, automated MRV reporting, species trend analysis",
+                "content": """BioGuardian: A Real-Time Biodiversity Threat Detection & Climate Resilience Platform
+
+An AI-powered field intelligence platform that analyzes sound, satellite imagery, drone footage, and field reports in real-time.
+
+Key Capabilities:
+- Detect threats like illegal logging, species disappearance, or climate-induced degradation
+- Generate ecosystem insights (species trends, rewilding opportunities)
+- Deliver natural language responses to field teams and policymakers
+- Automate reporting and MRV for biodiversity and climate projects
+
+Technology: Gemini/Vertex AI, AutoML Vision, bioacoustic sensors, Earth Engine integration.
+Timeline: 3-month accelerator readiness with pilots in Jharkhand and Sundarbans."""
+            },
+            {
+                "project_name": "Western Ghats Avian Acoustic Monitoring",
+                "focus_areas": "birds, raptors, acoustic monitoring, endemic species, rainforest conservation",
+                "target_species": "raptors, eagles, kites, vultures, hornbills, endemic birds",
+                "location": "Western Ghats, Karnataka and Kerala",
+                "status": "planned",
+                "methodology": "Dense AudioMoth network, AI species identification, community parabiologist program",
+                "expected_outcomes": "Endemic species population baseline, habitat connectivity maps, community conservation network, 50+ trained parabiologists",
+                "content": """Western Ghats Avian Acoustic Monitoring Project
+
+Conservation initiative focusing on the Western Ghats—a UNESCO World Heritage Site and biodiversity hotspot.
+
+Project Goals:
+- Establish baseline population data for endemic and endangered bird species
+- Monitor raptor populations including eagles, kites, and vultures
+- Track hornbill abundance as indicator species for forest health
+- Create acoustic fingerprint of healthy vs degraded forest patches
+
+Methodology:
+- Deploy 50+ AudioMoth recorders across altitude gradients
+- Train AI models on Western Ghats-specific bird and raptor calls
+- Partner with local communities as parabiologists
+- Integrate satellite imagery for habitat mapping
+
+Alignment: Supports State Forest Department mandates, India's Kunming-Montreal commitments, biodiversity credit potential."""
+            }
+        ]
+        
+        # Add to collection
+        documents = [p["content"] for p in projects]
+        metadatas = [{k: v for k, v in p.items() if k != "content"} for p in projects]
+        ids = [f"project_{i}" for i in range(len(projects))]
+        
+        count = chroma.add_documents(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids,
+            collection_name=ProjectMatcher.PROJECTS_COLLECTION
+        )
+        
+        return {
+            "message": f"Seeded {count} sample projects",
+            "projects": [p["project_name"] for p in projects],
+            "collection": ProjectMatcher.PROJECTS_COLLECTION
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+
+class ProjectInput(BaseModel):
+    """Input model for adding a new project."""
+    project_name: str = Field(..., description="Name of the project")
+    description: str = Field(..., description="Detailed project description")
+    focus_areas: List[str] = Field(..., description="List of focus areas e.g., ['raptors', 'conservation']")
+    target_species: List[str] = Field(default=[], description="List of target species")
+    location: str = Field(..., description="Geographic location")
+    methodology: str = Field(default="", description="Project methodology")
+    expected_outcomes: List[str] = Field(default=[], description="Expected outcomes")
+    status: str = Field(default="planned", description="Status: active, planned, completed")
+
+
+@router.post("/projects/add")
+async def add_project(
+    project: ProjectInput,
+    settings: Settings = Depends(get_settings)
+):
+    """
+    Add a new Daruka project to the database.
+    
+    This project will be searchable and used in future queries.
+    """
+    from src.rag.project_matcher import ProjectMatcher
+    import uuid
+    
+    try:
+        embeddings = EmbeddingsManager(model=settings.embedding_model)
+        chroma = ChromaManager(
+            persist_directory=settings.chroma_db_path,
+            embeddings_manager=embeddings
+        )
+        
+        # Create full content for embedding
+        content = f"""{project.project_name}
+
+{project.description}
+
+Focus Areas: {', '.join(project.focus_areas)}
+Target Species: {', '.join(project.target_species)}
+Location: {project.location}
+Methodology: {project.methodology}
+Expected Outcomes: {', '.join(project.expected_outcomes)}
+Status: {project.status}"""
+        
+        # Create metadata
+        metadata = {
+            "project_name": project.project_name,
+            "focus_areas": ", ".join(project.focus_areas),
+            "target_species": ", ".join(project.target_species),
+            "location": project.location,
+            "methodology": project.methodology,
+            "expected_outcomes": ", ".join(project.expected_outcomes),
+            "status": project.status
+        }
+        
+        # Generate unique ID
+        project_id = f"project_{uuid.uuid4().hex[:8]}"
+        
+        # Add to collection
+        count = chroma.add_documents(
+            documents=[content],
+            metadatas=[metadata],
+            ids=[project_id],
+            collection_name=ProjectMatcher.PROJECTS_COLLECTION
+        )
+        
+        return {
+            "message": f"Project '{project.project_name}' added successfully",
+            "project_id": project_id,
+            "collection": ProjectMatcher.PROJECTS_COLLECTION
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/projects")
+async def list_projects(
+    settings: Settings = Depends(get_settings)
+):
+    """
+    List all Daruka projects in the database.
+    """
+    from src.rag.project_matcher import ProjectMatcher
+    
+    try:
+        embeddings = EmbeddingsManager(model=settings.embedding_model)
+        chroma = ChromaManager(
+            persist_directory=settings.chroma_db_path,
+            embeddings_manager=embeddings
+        )
+        
+        collection = chroma.get_or_create_collection(ProjectMatcher.PROJECTS_COLLECTION)
+        
+        results = collection.get(
+            limit=50,
+            include=["metadatas"]
+        )
+        
+        projects = []
+        if results and results["ids"]:
+            for i, (project_id, meta) in enumerate(zip(results["ids"], results["metadatas"])):
+                projects.append({
+                    "id": project_id,
+                    "name": meta.get("project_name", "Unknown"),
+                    "focus_areas": meta.get("focus_areas", ""),
+                    "location": meta.get("location", ""),
+                    "status": meta.get("status", "")
+                })
+        
+        return {
+            "projects": projects,
+            "total": len(projects)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,5 +1,5 @@
 """
-RAG Chain for query processing and answer generation.
+RAG Chain for query processing and answer generation with memory support.
 """
 
 from typing import List, Dict, Any, Optional
@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .retriever import RAGRetriever, RetrievedDocument
 from .prompts import PromptTemplates
+from .memory import get_memory
 
 
 @dataclass
@@ -19,11 +20,12 @@ class RAGResponse:
     sources: List[Dict[str, Any]]
     query: str
     documents_used: int
+    session_id: Optional[str] = None
 
 
 class RAGChain:
     """
-    RAG Chain combining retriever, prompts, and LLM.
+    RAG Chain combining retriever, prompts, LLM, and conversation memory.
     """
     
     def __init__(
@@ -49,20 +51,23 @@ class RAGChain:
             temperature=temperature
         )
         self.prompts = PromptTemplates()
+        self.memory = get_memory()
     
     def query(
         self,
         question: str,
         website_context: Optional[str] = None,
-        top_k: int = 5
+        top_k: int = 5,
+        session_id: Optional[str] = None
     ) -> RAGResponse:
         """
-        Process a query through the RAG chain.
+        Process a query through the RAG chain with optional memory.
         
         Args:
             question: User question
             website_context: Optional website filter
             top_k: Number of documents to retrieve
+            session_id: Optional session ID for conversation memory
             
         Returns:
             RAGResponse with answer and sources
@@ -77,10 +82,20 @@ class RAGChain:
         # Format context
         context = self.retriever.format_context(documents)
         
-        # Get prompts
+        # Get conversation history if session_id provided
+        conversation_history = ""
+        if session_id:
+            conversation_history = self.memory.get_formatted_history(
+                session_id=session_id,
+                website_context=website_context or "default",
+                max_messages=6
+            )
+        
+        # Get prompts with memory
         system_prompt, user_prompt = self.prompts.get_full_prompt(
             context=context,
-            question=question
+            question=question,
+            conversation_history=conversation_history
         )
         
         # Generate answer
@@ -92,6 +107,15 @@ class RAGChain:
         response = self.llm.invoke(messages)
         answer = response.content
         
+        # Save to memory if session_id provided
+        if session_id:
+            self.memory.add_exchange(
+                session_id=session_id,
+                website_context=website_context or "default",
+                user_message=question,
+                assistant_message=answer
+            )
+        
         # Format sources
         sources = self.retriever.get_sources_for_response(documents)
         
@@ -99,13 +123,16 @@ class RAGChain:
             answer=answer,
             sources=sources,
             query=question,
-            documents_used=len(documents)
+            documents_used=len(documents),
+            session_id=session_id
         )
     
     def query_with_custom_context(
         self,
         question: str,
-        context: str
+        context: str,
+        session_id: Optional[str] = None,
+        website_context: Optional[str] = None
     ) -> str:
         """
         Generate answer with custom context (bypass retrieval).
@@ -113,13 +140,25 @@ class RAGChain:
         Args:
             question: User question
             context: Pre-formatted context
+            session_id: Optional session ID for memory
+            website_context: Optional website context for memory
             
         Returns:
             Generated answer
         """
+        # Get conversation history if session_id provided
+        conversation_history = ""
+        if session_id:
+            conversation_history = self.memory.get_formatted_history(
+                session_id=session_id,
+                website_context=website_context or "default",
+                max_messages=6
+            )
+        
         system_prompt, user_prompt = self.prompts.get_full_prompt(
             context=context,
-            question=question
+            question=question,
+            conversation_history=conversation_history
         )
         
         messages = [
@@ -128,4 +167,15 @@ class RAGChain:
         ]
         
         response = self.llm.invoke(messages)
-        return response.content
+        answer = response.content
+        
+        # Save to memory if session_id provided
+        if session_id:
+            self.memory.add_exchange(
+                session_id=session_id,
+                website_context=website_context or "default",
+                user_message=question,
+                assistant_message=answer
+            )
+        
+        return answer

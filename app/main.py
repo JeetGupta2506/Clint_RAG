@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import upload, query, ingest, admin, text_ingest
+from app.routes import upload, query, ingest, admin, text_ingest, sessions
 
 
 @asynccontextmanager
@@ -50,9 +50,10 @@ app.add_middleware(
 
 # Include routers
 app.include_router(upload.router, prefix="/api", tags=["Upload"])
-app.include_router(query.router, prefix="/api", tags=["Query"])
+app.include_router(query.router, prefix="/api", tags=["Chat"])
 app.include_router(ingest.router, prefix="/api", tags=["Ingest"])
 app.include_router(text_ingest.router, prefix="/api", tags=["Text Ingest"])
+app.include_router(sessions.router, prefix="/api", tags=["Sessions"])
 app.include_router(admin.router, prefix="/api", tags=["Admin"])
 
 

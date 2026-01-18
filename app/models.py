@@ -21,13 +21,17 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="User's question", min_length=1)
     website_context: Optional[str] = Field(
         None, 
-        description="Optional website filter (e.g., 'website_a')"
+        description="Optional website filter (e.g., 'rrcf_raptors')"
     )
     top_k: int = Field(
         default=5, 
         description="Number of results to retrieve",
         ge=1, 
         le=20
+    )
+    session_id: Optional[str] = Field(
+        None,
+        description="Session ID for conversation memory. Use same ID for multi-turn conversations."
     )
 
 
@@ -39,6 +43,7 @@ class QueryResponse(BaseModel):
         description="Source documents used"
     )
     query: str = Field(..., description="Original query")
+    session_id: Optional[str] = Field(None, description="Session ID used")
 
 
 class UploadResponse(BaseModel):
